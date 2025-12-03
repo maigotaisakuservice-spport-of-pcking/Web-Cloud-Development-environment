@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nexus Cloud IDE - Singularity Edition</title>
+    
+    <!-- Libraries -->
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- ACE Editor -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.32.7/ace.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.32.7/ext-language_tools.js"></script>
+    <!-- Xterm.js Terminal -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/xterm/5.3.0/xterm.min.css" />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xterm/5.3.0/xterm.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xterm-addon-fit/0.8.0/xterm-addon-fit.min.js"></script>
+    <!-- Font Awesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <!-- Config & Styles -->
+    <script>
+        // Tailwind Configuration for Dark Theme
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        nexus: { 900: '#0b0e14', 800: '#151b26', 700: '#232d3f', accent: '#6366f1' }
+                    },
+                    animation: { 'spin-slow': 'spin 3s linear infinite', 'pulse-fast': 'pulse 1s cubic-bezier(0.4, 0, 0.6, 1) infinite' }
+                }
+            }
+        }
+    </script>
+    <style>
+        /* Custom Fonts for Code and UI */
+        @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Inter:wght@300;400;600;800&display=swap');
+        
+        body { font-family: 'Inter', sans-serif; background-color: #0b0e14; color: #e2e8f0; overflow: hidden; }
+        .font-mono { font-family: 'JetBrains Mono', monospace; }
+        
+        /* Glassmorphism & Scrollbars */
+        .glass { background: rgba(21, 27, 38, 0.7); backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.08); }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: #0b0e14; }
+        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #475569; }
+
+        /* File Tree Hover Effects */
+        .file-node:hover { background-color: rgba(99, 102, 241, 0.1); color: #fff; }
+        .file-node.active { background-color: rgba(99, 102, 241, 0.2); border-left: 2px solid #6366f1; color: #a5b4fc; }
+
+        /* Boot Screen */
+        #boot-screen { 
+            position: fixed; inset: 0; z-index: 1000; 
+            background: #000; display: flex; flex-direction: column; 
+            align-items: center; justify-content: center; 
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        /* Editor container must be relative for ACE to work */
+        #editor-container { position: relative; }
+
+        /* Prevent Xterm artifacts */
+        .xterm-viewport { overflow-y: auto !important; }
+    </style>
+</head>
+<body class="flex flex-col h-screen w-screen selection:bg-indigo-500 selection:text-white">
+
+    <!-- MODAL CONTAINER (for system messages, replacing alert/confirm) -->
+    <div id="modal-container" class="fixed inset-0 bg-black/70 z-[1001] hidden flex items-center justify-center">
+        <div id="system-modal" class="glass w-80 p-6 rounded-lg shadow-2xl border-indigo-500/50 flex flex-col items-center">
+            <i id="modal-icon" class="fa-solid fa-circle-info text-4xl mb-4 text-indigo-400"></i>
+            <h3 id="modal-title" class="text-lg font-bold mb-3 text-white">System Message</h3>
+            <p id="modal-message" class="text-sm text-gray-300 text-center mb-6">Placeholder message.</p>
+            <button onclick="closeModal()" class="bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold px-4 py-2 rounded transition w-full">OK</button>
+        </div>
+    </div>
+
+    <!-- BOOT SEQUENCE OVERLAY -->
+    <div id="boot-screen">
+        <div class="text-indigo-500 text-6xl mb-4"><i class="fa-solid fa-infinity fa-spin-slow"></i></div>
+        <div class="text-2xl font-bold tracking-widest text-white mb-2">NEXUS OS</div>
+        <div class="text-xs text-gray-500 mb-8">SINGULARITY EDITION v3.1</div>
+        <div class="w-64 h-1 bg-gray-900 rounded-full overflow-hidden">
+            <div id="boot-bar" class="h-full bg-indigo-500 w-0 transition-all duration-[2000ms] ease-out"></div>
+        </div>
+        <div id="boot-log" class="mt-4 text-xs text-gray-400 font-mono h-6 text-center">Initializing Kernel...</div>
+    </div>
+
+    <!-- APP STRUCTURE -->
+    <div id="app" class="flex flex-col h-full opacity-0 transition-opacity duration-1000">
+        
+        <!-- HEADER -->
+        <header class="h-10 bg-nexus-900 border-b border-white/10 flex items-center justify-between px-3 select-none">
+            <div class="flex items-center space-x-3">
+                <i class="fa-brands fa-linux text-yellow-500 text-lg"></i>
+                <span class="font-bold text-sm tracking-wide text-gray-200">Nexus <span class="text-indigo-400">Cloud</span></span>
+            </div>
+
+            <div class="flex items-center space-x-3">
+                <div onclick="toggleAI()" class="cursor-pointer text-xs bg-indigo-500/10 text-indigo-400 border border-indigo-500/30 px-3 py-1 rounded-full hover:bg-indigo-500/20 transition flex items-center gap-2">
+                    <i class="fa-solid fa-wand-magic-sparkles"></i> Nexus AI
+                </div>
+                <button onclick="deployALL()" id="deploy-btn" class="bg-green-600 hover:bg-green-500 text-white text-xs px-3 py-1 rounded transition shadow-lg font-bold flex items-center gap-2">
+                    <i class="fa-solid fa-rocket"></i> Deploy
+                </button>
+            </div>
+        </header>
+
+        <!-- MAIN LAYOUT -->
+        <div class="flex-1 flex overflow-hidden">
+            
+            <!-- EXPLORER PANEL -->
+            <div id="explorer" class="w-16 sm:w-64 bg-nexus-800 border-r border-white/10 flex flex-col transition-all duration-300">
+                <div class="h-8 px-4 flex items-center justify-between text-xs font-bold text-gray-400 uppercase tracking-wider bg-nexus-900/50">
+                    <span class="hidden sm:inline">Explorer</span>
+                    <i class="fa-regular fa-file text-lg sm:hidden text-indigo-400"></i>
+                    <i class="fa-solid fa-ellipsis hover:text-white cursor-pointer hidden sm:inline"></i>
+                </div>
+                <!-- File Tree Container -->
+                <div id="file-tree" class="p-2 space-y-0.5 font-mono text-sm overflow-y-auto flex-1">
+                    <!-- JS creates content here -->
+                </div>
+                <div class="p-2 border-t border-white/10 bg-nexus-900 flex justify-around text-gray-400">
+                    <i onclick="exec('touch new-file.txt')" title="Create File" class="fa-solid fa-file-circle-plus hover:text-white cursor-pointer text-base"></i>
+                    <i onclick="exec('mkdir new-folder')" title="Create Folder (Simulated)" class="fa-solid fa-folder-plus hover:text-white cursor-pointer text-base"></i>
+                </div>
+            </div>
+
+            <!-- EDITOR AREA -->
+            <div class="flex-1 flex flex-col min-w-0 bg-nexus-800">
+                <!-- Tabs -->
+                <div id="tabs-container" class="h-9 flex bg-nexus-900 border-b border-white/10 overflow-x-auto no-scrollbar">
+                    <!-- JS creates tabs here -->
+                </div>
+
+                <!-- Split View: Editor + Preview -->
+                <div class="flex-1 flex relative overflow-hidden">
+                    <!-- Code Editor -->
+                    <div id="editor-container" class="flex-1 relative">
+                        <div id="ace-editor" class="absolute inset-0"></div>
+                    </div>
+                    
+                    <!-- Live Preview -->
+                    <div id="preview-panel" class="w-0 sm:w-1/2 lg:w-2/5 border-l border-white/10 bg-white flex flex-col transition-all duration-300 overflow-hidden">
+                        <div class="h-8 bg-gray-100 border-b flex items-center px-2 space-x-2 shrink-0">
+                            <div class="flex gap-1.5">
+                                <div class="w-2.5 h-2.5 rounded-full bg-red-400"></div>
+                                <div class="w-2.5 h-2.5 rounded-full bg-yellow-400"></div>
+                                <div class="w-2.5 h-2.5 rounded-full bg-green-400"></div>
+                            </div>
+                            <div class="flex-1 bg-white border h-5 rounded text-[10px] flex items-center px-2 text-gray-500 shadow-sm">
+                                <i class="fa-solid fa-lock text-[8px] mr-1"></i> localhost:3000
+                            </div>
+                            <i class="fa-solid fa-rotate-right text-gray-400 text-xs hover:text-gray-600 cursor-pointer" onclick="refreshPreview()"></i>
+                        </div>
+                        <iframe id="preview-frame" class="flex-1 w-full bg-white"></iframe>
+                    </div>
+                </div>
+
+                <!-- BOTTOM PANEL (Terminal) -->
+                <div class="h-48 bg-nexus-900 border-t border-white/10 flex flex-col shrink-0">
+                    <div class="h-8 flex items-center px-4 space-x-6 text-xs text-gray-400 border-b border-white/5 bg-nexus-800">
+                        <span class="text-white font-bold border-b-2 border-indigo-500 h-full flex items-center cursor-pointer">TERMINAL</span>
+                        <span class="hover:text-white cursor-pointer border-b-2 border-transparent hover:border-indigo-500 h-full flex items-center">OUTPUT</span>
+                    </div>
+                    <div class="flex-1 p-2 bg-black/50 overflow-hidden relative">
+                        <div id="terminal-container" class="h-full w-full"></div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- AI ASSISTANT PANEL (Initially Hidden) -->
+            <div id="ai-panel" class="w-0 sm:w-0 overflow-hidden transition-all duration-300 bg-nexus-800 border-l border-white/10 flex flex-col z-10">
+                <div class="h-10 border-b border-white/10 flex items-center justify-between px-4 bg-nexus-900 shrink-0">
+                    <span class="font-bold text-sm text-indigo-400"><i class="fa-solid fa-robot mr-2"></i>Nexus AI</span>
+                    <i onclick="toggleAI()" class="fa-solid fa-xmark text-gray-500 hover:text-white cursor-pointer"></i>
+                </div>
+                <div id="ai-chat" class="flex-1 p-4 overflow-y-auto space-y-4 text-sm font-mono text-gray-200">
+                    <div class="bg-indigo-500/10 p-3 rounded-lg border border-indigo-500/20 text-indigo-200">
+                        <i class="fa-solid fa-circle-notch fa-spin mr-2"></i>WebLLMモデルをロード中です... (シミュレーション)
+                    </div>
+                    <div id="ai-welcome-msg" class="bg-indigo-500/10 p-3 rounded-lg border border-indigo-500/20 text-indigo-200 hidden">
+                        こんにちは。私はNexus AIです。現在のプロジェクト構造を認識しました。コード生成、デバッグ、デプロイ支援が可能です。何かお手伝いしましょうか？
+                    </div>
+                </div>
+                <div class="p-3 border-t border-white/10 bg-nexus-900 shrink-0">
+                    <div class="flex items-center bg-nexus-800 border border-white/20 rounded-md px-2">
+                        <input id="ai-input" type="text" placeholder="Nexusに質問..." class="bg-transparent border-none text-sm text-white w-full h-8 focus:outline-none" onkeypress="handleAIChat(event)">
+                        <i id="ai-send-btn" class="fa-solid fa-paper-plane text-gray-500 hover:text-indigo-400 cursor-pointer p-2" onclick="sendAIMessage()"></i>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- STATUS BAR -->
+        <footer class="h-6 bg-indigo-600 text-white text-[10px] flex items-center justify-between px-3 select-none z-20 shrink-0">
+            <div class="flex items-center space-x-3">
+                <div class="flex items-center gap-1"><i class="fa-solid fa-code-branch"></i> <span>main*</span></div>
+                <div class="flex items-center gap-1"><i class="fa-regular fa-circle-xmark"></i> 0</div>
+                <div class="flex items-center gap-1"><i class="fa-solid fa-triangle-exclamation"></i> 0</div>
+            </div>
+            <div class="flex items-center space-x-4">
+                <span id="cursor-pos">Ln 1, Col 1</span>
+                <span>UTF-8</span>
+                <span id="file-language">HTML</span>
+                <div class="flex items-center gap-1"><i class="fa-solid fa-bell"></i></div>
+            </div>
+        </footer>
+    </div>
+
+    <!-- JAVASCRIPT LOGIC -->
+    <script>
