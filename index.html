@@ -216,3 +216,73 @@
 
     <!-- JAVASCRIPT LOGIC -->
     <script>
+        // --- GLOBAL STATE ---
+        const fs = {
+            'index.html': `<!DOCTYPE html>\n<html>\n<head>\n  <title>Nexus App</title>\n  <link rel="stylesheet" href="style.css">\n</head>\n<body>\n  <div class="container">\n    <h1>Welcome to Nexus</h1>\n    <p>The singularity is near.</p>\n    <button id="btn">Initiate</button>\n  </div>\n  <script src="app.js"></script>\n</body>\n</html>`,
+            'style.css': `body {\n  background: #000;\n  color: #fff;\n  font-family: 'Inter', sans-serif;\n  display: flex;\n  justify-content: center;\n  align-items: center;\n  height: 100vh;\n  margin: 0;\n}\n.container { \n  text-align: center; \n  padding: 40px;\n  border: 1px solid #6366f1;\n  border-radius: 8px;\n}\n#btn {\n  background: #6366f1;\n  color: white;\n  padding: 10px 20px;\n  border-radius: 4px;\n  margin-top: 20px;\n  cursor: pointer;\n}`,
+            'app.js': `// alert() は使わずにカスタムモーダルを使用します\ndocument.getElementById('btn').addEventListener('click', () => {\n  showModal('System Notification', 'System Fully Operational: Ready for Deployment', 'fa-solid fa-check-circle text-green-400');\n});`,
+            'readme.md': `# Nexus Project\n\n## Singularity Edition\n\nThis is an auto-generated project structure. Edit the files and hit 'Deploy'!`
+        };
+        
+        let currentFile = 'index.html';
+        let openFiles = ['index.html', 'style.css', 'app.js']; // Initial tabs
+        let editor, term, fitAddon;
+        let isAILoaded = false;
+
+        // --- MODAL UTILITIES (Replacing alert/confirm) ---
+        function showModal(title, message, iconClass) {
+            document.getElementById('modal-title').textContent = title;
+            document.getElementById('modal-message').textContent = message;
+            document.getElementById('modal-icon').className = iconClass || 'fa-solid fa-circle-info text-indigo-400';
+            document.getElementById('modal-container').classList.remove('hidden');
+        }
+
+        function closeModal() {
+            document.getElementById('modal-container').classList.add('hidden');
+        }
+
+        // --- BOOT SEQUENCE (Refactored using async/await for stability) ---
+
+        // Utility for creating a promise that resolves after a delay
+        const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+        
+        // Asynchronous boot sequence to guarantee order and timing
+        async function bootSequence() {
+            const bar = document.getElementById('boot-bar');
+            const log = document.getElementById('boot-log');
+            const screen = document.getElementById('boot-screen');
+            const app = document.getElementById('app');
+
+            // ログの順番
+            const logs = [
+                "Loading Virtual FS...", 
+                "Mounting WASM Kernel...", 
+                "Starting UI Subsystems...", 
+                "Connecting to Nexus Cloud...", 
+                "Ready."
+            ];
+
+            // 1. 小さな遅延の後にプログレスバーのアニメーションを開始
+            await delay(50); 
+            bar.style.width = '100%'; 
+
+            // 2. ログを順に表示
+            for (let i = 0; i < logs.length; i++) {
+                log.textContent = logs[i];
+                await delay(400); // 各ステップで400ms待機
+            }
+
+            // 3. IDEへのトランジションを開始
+            await delay(500); 
+            screen.style.opacity = '0';
+            
+            // 4. アプリケーションの初期化
+            setTimeout(() => screen.remove(), 500);
+            app.style.opacity = '1';
+            initIDE();
+        }
+        
+        window.onload = () => {
+            // DOMが完全にロードされた後、非同期ブートシーケンスを開始
+            bootSequence();
+        };
